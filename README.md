@@ -2,7 +2,7 @@
 
 A Docker container for easily deploying a pgvectorscale enabled Postgres database on Railway.
 
-[![Deploy on Railway](https://railway.app/button.svg)](https://railway.app/template/timescale-vectorscale)
+[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/deploy/postgresql-with-pgvectorscale?referralCode=NhCCIt&utm_medium=integration&utm_source=template&utm_campaign=generic)
 
 ## Documentation
 
