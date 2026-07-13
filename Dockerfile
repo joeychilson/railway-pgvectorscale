@@ -1,40 +1,63 @@
-FROM postgres:16 AS builder
+# syntax=docker/dockerfile:1
 
-RUN apt-get update && apt-get install -y \
-    build-essential \
-    git \
-    curl \
-    libssl-dev \
-    pkg-config \
-    postgresql-server-dev-16 \
+# PostgreSQL 18 with pgvector + pgvectorscale, built for Railway.
+#
+# Base: Railway's official postgres-ssl image (self-signed SSL, pgBackRest
+# WAL archiving / PITR, volume-mount guards, stale-pid cleanup).
+#
+# Version pins — bump these to upgrade:
+ARG PG_MAJOR=18
+ARG BASE_IMAGE=ghcr.io/railwayapp-templates/postgres-ssl:18
+ARG PGVECTORSCALE_VERSION=0.9.0
+
+# -----------------------------------------------------------------------------
+# Fetcher: pgvectorscale ships prebuilt .debs on its GitHub releases
+# (Rust/pgrx — building from source is slow and needs a full toolchain).
+# -----------------------------------------------------------------------------
+FROM postgres:${PG_MAJOR} AS fetcher
+ARG PG_MAJOR
+ARG PGVECTORSCALE_VERSION
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      curl \
+      ca-certificates \
+      unzip \
     && rm -rf /var/lib/apt/lists/*
 
-RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-ENV PATH="/root/.cargo/bin:${PATH}"
+RUN arch="$(dpkg --print-architecture)" \
+    && curl -fsSL -o /tmp/vectorscale.zip \
+       "https://github.com/timescale/pgvectorscale/releases/download/${PGVECTORSCALE_VERSION}/pgvectorscale-${PGVECTORSCALE_VERSION}-pg${PG_MAJOR}-${arch}.zip" \
+    && mkdir -p /debs \
+    && unzip /tmp/vectorscale.zip -d /debs \
+    && ls /debs/*.deb
 
-RUN cd /tmp && \
-    git clone --branch v0.8.1 https://github.com/pgvector/pgvector.git && \
-    cd pgvector && \
-    make && \
-    make install
+# -----------------------------------------------------------------------------
+# Final image
+# -----------------------------------------------------------------------------
+FROM ${BASE_IMAGE}
+ARG PG_MAJOR
 
-RUN cd /tmp && \
-    git clone --branch 0.8.0 https://github.com/timescale/pgvectorscale.git && \
-    cd pgvectorscale/pgvectorscale && \
-    cargo install --locked cargo-pgrx --version 0.12.9 && \
-    cargo pgrx init --pg16 /usr/bin/pg_config && \
-    cargo pgrx install --release
+COPY --from=fetcher /debs/ /tmp/debs/
 
-FROM postgres:16
+# pgvector from PGDG (already configured in the official postgres base image),
+# pgvectorscale from the fetched release .deb.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      postgresql-${PG_MAJOR}-pgvector \
+      /tmp/debs/*.deb \
+    && rm -rf /var/lib/apt/lists/* /tmp/debs
 
-COPY --from=builder /usr/share/postgresql/16/extension/vector--*.sql /usr/share/postgresql/16/extension/
-COPY --from=builder /usr/share/postgresql/16/extension/vector.control /usr/share/postgresql/16/extension/
-COPY --from=builder /usr/lib/postgresql/16/lib/vector.so /usr/lib/postgresql/16/lib/
+# Build-time sanity check: both extensions must be installable.
+RUN set -eux; \
+    for ext in vector vectorscale; do \
+      test -f "/usr/share/postgresql/${PG_MAJOR}/extension/${ext}.control"; \
+    done; \
+    ls "/usr/lib/postgresql/${PG_MAJOR}/lib/" | grep -q vectorscale
 
-COPY --from=builder /usr/share/postgresql/16/extension/vectorscale--*.sql /usr/share/postgresql/16/extension/
-COPY --from=builder /usr/share/postgresql/16/extension/vectorscale.control /usr/share/postgresql/16/extension/
-COPY --from=builder /usr/lib/postgresql/16/lib/vectorscale*.so /usr/lib/postgresql/16/lib/
-
+COPY --chmod=755 ensure-extensions.sh /usr/local/bin/ensure-extensions.sh
+COPY --chmod=755 entrypoint.sh /usr/local/bin/pgvectorscale-entrypoint.sh
 COPY init-extensions.sql /docker-entrypoint-initdb.d/
 
-EXPOSE 5432
+ENTRYPOINT ["pgvectorscale-entrypoint.sh"]
+# Redeclared because setting ENTRYPOINT resets any inherited CMD. Port is
+# pinned to 5432 (Railway's TCP proxy expects it), matching the base image.
+CMD ["postgres", "-p", "5432", "-c", "listen_addresses=*"]
