@@ -4,10 +4,10 @@
 # builds and answers queries, and a restart that keeps data and re-runs the
 # extension updater. CI runs this before any image is published.
 #
-# Usage: ./test/smoke-test.sh <image>
+# Usage: ./test/smoke-test.sh [image]
 set -euo pipefail
 
-IMAGE="${1:?usage: smoke-test.sh <image>}"
+IMAGE="${1:-railway-pgvectorscale:test}"
 NAME="pgvs-smoke-$$"
 
 cleanup() {

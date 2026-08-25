@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1
+# syntax=docker/dockerfile:1.7
 
 # PostgreSQL 18 with pgvector + pgvectorscale, built for Railway.
 #
@@ -10,10 +10,6 @@ ARG PG_MAJOR=18
 ARG BASE_IMAGE=ghcr.io/railwayapp-templates/postgres-ssl:18
 ARG PGVECTORSCALE_VERSION=0.9.0
 
-# -----------------------------------------------------------------------------
-# Fetcher: pgvectorscale ships prebuilt .debs on its GitHub releases
-# (Rust/pgrx — building from source is slow and needs a full toolchain).
-# -----------------------------------------------------------------------------
 FROM postgres:${PG_MAJOR} AS fetcher
 ARG PG_MAJOR
 ARG PGVECTORSCALE_VERSION
@@ -31,9 +27,6 @@ RUN arch="$(dpkg --print-architecture)" \
     && unzip /tmp/vectorscale.zip -d /debs \
     && ls /debs/*.deb
 
-# -----------------------------------------------------------------------------
-# Final image
-# -----------------------------------------------------------------------------
 FROM ${BASE_IMAGE}
 ARG PG_MAJOR
 

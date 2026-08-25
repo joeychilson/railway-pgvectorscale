@@ -1,6 +1,6 @@
 # pgvectorscale on Railway
 
-[![CI](https://github.com/joeychilson/railway-pgvectorscale/actions/workflows/build-docker.yml/badge.svg)](https://github.com/joeychilson/railway-pgvectorscale/actions/workflows/build-docker.yml)
+[![CI](https://github.com/joeychilson/railway-pgvectorscale/actions/workflows/ci.yml/badge.svg)](https://github.com/joeychilson/railway-pgvectorscale/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/joeychilson/railway-pgvectorscale)](https://github.com/joeychilson/railway-pgvectorscale/releases/latest)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
@@ -89,7 +89,8 @@ existing volume directly between major versions.
 
 A weekly workflow checks for new pgvectorscale releases and opens a pull
 request. Each update is smoke-tested and reviewed before a GitHub release
-publishes the image.
+publishes the image. The wrapper version is independent from PostgreSQL and
+the extensions; see [RELEASING.md](RELEASING.md) for the release policy.
 
 ## Migrating from PostgreSQL 16
 
@@ -114,8 +115,8 @@ To migrate:
 ## Development
 
 ```text
-docker compose up -d --build
-./test/smoke-test.sh $(docker compose images -q postgres)
+docker build -t railway-pgvectorscale:test .
+./test/smoke-test.sh railway-pgvectorscale:test
 ```
 
 The smoke test verifies SSL, both extensions, extension-version alignment,
