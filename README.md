@@ -1,108 +1,126 @@
-# railway-pgvectorscale
+# pgvectorscale on Railway
 
-**PostgreSQL 18 with [pgvector](https://github.com/pgvector/pgvector) and
-[pgvectorscale](https://github.com/timescale/pgvectorscale)**, built for
-[Railway](https://railway.com). It extends Railway's official
-[`postgres-ssl`](https://github.com/railwayapp-templates/postgres-ssl) image,
-so you keep self-signed SSL, pgBackRest WAL archiving / point-in-time
-recovery, and Railway's volume conventions — and adds vector search that
-scales past what plain HNSW can hold in memory.
+[![CI](https://github.com/joeychilson/railway-pgvectorscale/actions/workflows/build-docker.yml/badge.svg)](https://github.com/joeychilson/railway-pgvectorscale/actions/workflows/build-docker.yml)
+[![Release](https://img.shields.io/github/v/release/joeychilson/railway-pgvectorscale)](https://github.com/joeychilson/railway-pgvectorscale/releases/latest)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
+A Railway template for running PostgreSQL 18 with
+[pgvector](https://github.com/pgvector/pgvector) and
+[pgvectorscale](https://github.com/timescale/pgvectorscale).
+
+The image extends Railway's
+[`postgres-ssl`](https://github.com/railwayapp-templates/postgres-ssl) image
+with scalable vector search while preserving SSL, pgBackRest WAL archiving,
+point-in-time recovery, and Railway's volume conventions.
+
+## Deployment
 
 [![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/deploy/postgresql-with-pgvectorscale?referralCode=NhCCIt&utm_medium=integration&utm_source=template&utm_campaign=generic)
 
-## What's inside
+The template creates both extensions automatically:
 
-| Extension | What it gives you |
+| Extension | Purpose |
 |---|---|
-| `vector` (pgvector, from PGDG) | Vector similarity search: `vector` type, HNSW + IVFFlat indexes |
-| `vectorscale` (pgvectorscale, prebuilt release package) | StreamingDiskANN index + statistical binary quantization — pgvector at bigger scale, lower memory |
+| `vector` | Vector values, similarity search, and HNSW and IVFFlat indexes |
+| `vectorscale` | StreamingDiskANN indexes and statistical binary quantization |
 
-Both extensions are created automatically in your database on first boot, and
-an on-boot updater keeps their SQL in sync with the version shipped in the
-image (see below).
+For a manual Railway deployment:
 
-```sql
-CREATE TABLE items (id bigserial PRIMARY KEY, embedding vector(1536));
-CREATE INDEX ON items USING diskann (embedding vector_cosine_ops);
-SELECT id FROM items ORDER BY embedding <=> '[...]' LIMIT 10;
+1. Use `ghcr.io/joeychilson/railway-pgvectorscale:<version>`.
+2. Attach a volume at `/var/lib/postgresql/data`.
+3. Configure the PostgreSQL variables below.
+4. Add a TCP proxy on port `5432` only when external access is required.
+
+The base image refuses to start on Railway without the volume to protect the
+database from accidental data loss.
+
+## Configuration
+
+| Variable | Value | Purpose |
+|---|---|---|
+| `PGDATA` | `/var/lib/postgresql/data/pgdata` | PostgreSQL data directory |
+| `POSTGRES_USER` | `postgres` | Database user |
+| `POSTGRES_PASSWORD` | Secret | Required database password |
+| `POSTGRES_DB` | `railway` | Default database |
+| `DATABASE_URL` | Template-generated | Private Railway connection string |
+| `POSTGRES_ENSURE_EXTENSIONS` | `on` | Set to `off` to disable automatic extension creation and updates |
+| `SSL_CERT_DAYS` | `820` | Self-signed certificate validity |
+| `WAL_ARCHIVE_*` | Optional | pgBackRest WAL archiving settings |
+| `WAL_RECOVER_FROM_*` | Optional | pgBackRest recovery settings |
+
+The template uses this private connection string:
+
+```text
+postgresql://${{POSTGRES_USER}}:${{POSTGRES_PASSWORD}}@${{RAILWAY_PRIVATE_DOMAIN}}:5432/${{POSTGRES_DB}}
 ```
 
-## How updates are delivered (and why nothing breaks)
+## Example
 
-- Images are published **only** from GitHub releases, under **immutable
-  version tags** (`X.Y.Z`, `X.Y`, `sha-<commit>`). There is no `latest` tag;
-  a tag you deploy is never mutated underneath you.
-- On every boot, a background task creates the default extensions if missing
-  and runs `ALTER EXTENSION ... UPDATE` to bring installed extensions up to
-  the version the image ships. pgvectorscale's shared library is
-  version-named, so this step is what makes image upgrades safe for existing
-  databases. Disable with `POSTGRES_ENSURE_EXTENSIONS=off`.
-- Postgres **minor** upgrades ride along with new image releases and are safe
-  for your data volume. **Major** upgrades (e.g. 16 → 18) require a
-  dump/restore or logical replication, as with any Postgres — never just
-  switch the image tag across a major version.
-- Railway's [image auto-updates](https://docs.railway.com/deployments/image-auto-updates)
-  work with the semver tags: enable them on your service to be offered
-  patch/minor bumps during a maintenance window you choose.
+Create and query a StreamingDiskANN index:
 
-## Deploying manually (outside the template)
+```sql
+CREATE TABLE items (
+    id BIGSERIAL PRIMARY KEY,
+    embedding VECTOR(1536)
+);
 
-1. Create a service from the image
-   `ghcr.io/joeychilson/railway-pgvectorscale:<version>`.
-2. **Attach a volume at `/var/lib/postgresql/data`** (the base image refuses
-   to boot on Railway without it — this protects your data).
-3. Set variables:
+CREATE INDEX ON items USING diskann (embedding vector_cosine_ops);
 
-   | Variable | Value |
-   |---|---|
-   | `PGDATA` | `/var/lib/postgresql/data/pgdata` |
-   | `POSTGRES_USER` | `postgres` |
-   | `POSTGRES_PASSWORD` | a strong secret |
-   | `POSTGRES_DB` | `railway` |
-   | `DATABASE_URL` | `postgresql://${{POSTGRES_USER}}:${{POSTGRES_PASSWORD}}@${{RAILWAY_PRIVATE_DOMAIN}}:5432/${{POSTGRES_DB}}` |
+SELECT id
+FROM items
+ORDER BY embedding <=> '[...]'
+LIMIT 10;
+```
 
-4. Add a TCP proxy on port `5432` if you want external access.
+## Updates
 
-## Migrating from the PostgreSQL 16 image
+Images are published only from GitHub releases. Exact `X.Y.Z` and
+`sha-<commit>` tags are immutable, while `X.Y` tracks the latest patch release
+in that minor line. There is no `latest` tag. Use the `X.Y` channel with
+Railway image auto-updates to receive reviewed patch releases.
 
-Deployments created from this template before the PostgreSQL 18 update run
-`ghcr.io/joeychilson/railway-pgvectorscale:sha-252c4c3` (PostgreSQL 16,
-pgvector 0.8.1, pgvectorscale 0.8.0). That image keeps working and will not
-change — but it also won't receive updates. To move to 18:
+On each boot, a background task creates missing extensions and runs
+`ALTER EXTENSION ... UPDATE` when the image contains newer extension SQL. This
+keeps existing databases aligned with the libraries shipped in the image.
+
+PostgreSQL minor upgrades can use the existing volume. A PostgreSQL major
+upgrade requires a dump and restore or logical replication; never switch an
+existing volume directly between major versions.
+
+A weekly workflow checks for new pgvectorscale releases and opens a pull
+request. Each update is smoke-tested and reviewed before a GitHub release
+publishes the image.
+
+## Migrating from PostgreSQL 16
+
+Older template deployments use
+`ghcr.io/joeychilson/railway-pgvectorscale:sha-252c4c3`, which contains
+PostgreSQL 16, pgvector 0.8.1, and pgvectorscale 0.8.0. That image remains
+available but does not receive updates.
+
+To migrate:
 
 1. Deploy a new service from the current template.
-2. Copy the data: `pg_dump -Fc "$OLD_DATABASE_URL" | pg_restore -d "$NEW_DATABASE_URL" --no-owner`
-3. Point your app at the new `DATABASE_URL`, then delete the old service.
+2. Copy the database:
 
-## Local development
+   ```text
+   pg_dump -Fc "$OLD_DATABASE_URL" | \
+     pg_restore -d "$NEW_DATABASE_URL" --no-owner
+   ```
 
-```bash
+3. Update the application to use the new `DATABASE_URL`.
+4. Remove the old service after verifying the migration.
+
+## Development
+
+```text
 docker compose up -d --build
 ./test/smoke-test.sh $(docker compose images -q postgres)
 ```
 
-The smoke test boots the image, verifies SSL and both extensions, builds a
-`diskann` index, queries it, and restarts the container to prove data
-survives. CI runs it before any image is published.
-
-## Environment variables (image-specific)
-
-| Variable | Default | Purpose |
-|---|---|---|
-| `POSTGRES_ENSURE_EXTENSIONS` | `on` | `off` disables the boot-time extension create/update task |
-| `SSL_CERT_DAYS` | `820` | Self-signed cert validity (base image) |
-| `WAL_ARCHIVE_*` / `WAL_RECOVER_FROM_*` | – | pgBackRest WAL archiving & PITR (base image; see its README) |
-
-## Documentation
-
-- [pgvectorscale Docs](https://github.com/timescale/pgvectorscale)
-- [pgvector Docs](https://github.com/pgvector/pgvector)
-- [Railway Docs](https://docs.railway.com/)
+The smoke test verifies SSL, both extensions, extension-version alignment,
+StreamingDiskANN indexing and queries, and data persistence after a restart.
 
 ## License
 
-MIT License - see [LICENSE](LICENSE) file for details.
-
-## Contributing
-
-Contributions welcome! Please open an issue or submit a PR.
+[MIT](LICENSE)
