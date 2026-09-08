@@ -8,7 +8,7 @@
 # Version pins — bump these to upgrade:
 ARG PG_MAJOR=18
 ARG BASE_IMAGE=ghcr.io/railwayapp-templates/postgres-ssl:18
-ARG PGVECTORSCALE_VERSION=0.9.0
+ARG PGVECTORSCALE_VERSION=0.9.1
 
 FROM postgres:${PG_MAJOR} AS fetcher
 ARG PG_MAJOR
