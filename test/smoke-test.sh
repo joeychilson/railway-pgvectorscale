@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Boot the image in docker and exercise everything the template advertises:
 # SSL on, vector + vectorscale installed, a diskann index that actually
-# builds and answers queries, and a restart that keeps data and re-runs the
-# extension updater. CI runs this before any image is published.
+# builds and answers queries, a restart that keeps data and re-runs the
+# extension updater, and a clean shutdown on SIGTERM. CI runs this before any
+# image is published.
 #
 # Usage: ./test/smoke-test.sh [image]
 set -euo pipefail
@@ -79,6 +80,11 @@ docker restart "$NAME" >/dev/null
 wait_ready
 test "$(sql 'SELECT count(*) FROM smoke_items')" = "100"
 test -n "$(sql "SELECT id FROM smoke_items ORDER BY embedding <=> '[5,6,7]' LIMIT 1")"
+
+echo "==> SIGTERM shuts postgres down cleanly"
+docker stop --time 30 "$NAME" >/dev/null
+test "$(docker inspect -f '{{.State.ExitCode}}' "$NAME")" = "0"
+[[ "$(docker logs "$NAME" 2>&1)" == *"database system is shut down"* ]]
 
 echo "PASS"
 trap - EXIT
