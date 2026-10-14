@@ -28,6 +28,10 @@ docker run -d --name "$NAME" \
 
 sql() { docker exec "$NAME" psql -X -U postgres -d railway -tAc "$1"; }
 
+# How many log lines match. Counting before and after a step shows what that
+# step logged, since earlier boots can log the same line.
+count() { docker logs "$NAME" 2>&1 | grep -c "$1" || true; }
+
 wait_ready() {
   for _ in $(seq 1 60); do
     if docker exec "$NAME" pg_isready -q -h 127.0.0.1 -U postgres 2>/dev/null; then
@@ -76,15 +80,23 @@ sql "CREATE INDEX ON smoke_items USING diskann (embedding vector_cosine_ops)" >/
 test -n "$(sql "SELECT id FROM smoke_items ORDER BY embedding <=> '[5,6,7]' LIMIT 1")"
 
 echo "==> restart: data survives and the ensure job re-runs cleanly"
+ready="$(count 'ensure-extensions: extension ready: vectorscale')"
 docker restart "$NAME" >/dev/null
 wait_ready
+for _ in $(seq 1 30); do
+  [ "$(count 'ensure-extensions: extension ready: vectorscale')" -gt "$ready" ] && break
+  sleep 2
+done
+test "$(count 'ensure-extensions: extension ready: vectorscale')" -gt "$ready"
+test "$(count 'ensure-extensions: WARNING')" = "0"
 test "$(sql 'SELECT count(*) FROM smoke_items')" = "100"
 test -n "$(sql "SELECT id FROM smoke_items ORDER BY embedding <=> '[5,6,7]' LIMIT 1")"
 
 echo "==> SIGTERM shuts postgres down cleanly"
+shutdowns="$(count 'database system is shut down')"
 docker stop --time 30 "$NAME" >/dev/null
 test "$(docker inspect -f '{{.State.ExitCode}}' "$NAME")" = "0"
-[[ "$(docker logs "$NAME" 2>&1)" == *"database system is shut down"* ]]
+test "$(count 'database system is shut down')" -gt "$shutdowns"
 
 echo "PASS"
 trap - EXIT
