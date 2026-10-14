@@ -88,9 +88,9 @@ version.
 
 [Renovate](https://docs.renovatebot.com) bumps PostgreSQL minor versions,
 pgvector, and pgvectorscale. The bump merges after the smoke test passes on
-amd64 and arm64, and the merge publishes a patch release. pgvectorscale minor
-updates wait for review while it is on 0.x. The release policy for all of these
-templates is in
+amd64 and arm64, and the merge publishes a patch release. pgvector and
+pgvectorscale are on 0.x, so their minor updates wait for review. The release
+policy for all of these templates is in
 [railway-templates](https://github.com/joeychilson/railway-templates#releases).
 
 ### Migrating from PostgreSQL 16
