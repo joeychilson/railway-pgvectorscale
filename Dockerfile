@@ -3,7 +3,7 @@
 # and Railway's volume checks.
 
 # renovate: datasource=docker packageName=ghcr.io/railwayapp-templates/postgres-ssl depName=PostgreSQL
-ARG POSTGRES_VERSION=18.6@sha256:b328d83e2cd473b2fad8bb2d27a46a05ddb21550988f22776c28b7f2da494535
+ARG POSTGRES_VERSION=18.6@sha256:4fc833b43d2aaf6ecc9b18615f5533602b723a32d0e2efe2dae8ca0f7217c863
 # renovate: datasource=github-tags packageName=pgvector/pgvector depName=pgvector extractVersion=^v(?<version>.+)$
 ARG PGVECTOR_VERSION=0.8.7
 # renovate: datasource=github-releases packageName=timescale/pgvectorscale depName=pgvectorscale
